@@ -178,6 +178,23 @@ class ParameterManipulationTest(tf.test.TestCase, parameterized.TestCase):
     self.assertFalse(jnp.any(jnp.isnan(cartesian_coords)))
     self.assertAllClose(polar_params_reverse, polar_params)
 
+  def test_radius_from_polar_params(self):
+    """TODO"""
+    key = jax.random.PRNGKey(0)
+    source_length = 1
+    num_params = 50
+    polar_params = jax.random.normal(key, shape=(num_params, 2))
+
+    cartesian_params = vmap(
+        utils.polar_params_to_cartesian, in_axes=(0, None))(polar_params,
+                                                            source_length)
+    radius = vmap(
+        utils.propagation_radius, in_axes=(0, None))(cartesian_params,
+                                                     jnp.zeros(2))
+    self.assertAllClose(
+        radius, utils.radius_from_polar_params(polar_params, source_length))
+
+
   def test_check_for_nans(self):
     all_nan = jnp.nan * jnp.ones((23, 4))
     one_nan = jnp.ones((23, 4))

@@ -10,15 +10,15 @@ from typing import Callable, Sequence, TypeVar, Union, Any
 
 import jax
 from jax import numpy as jnp
-from jax import random
-from jax import typing as jaxtyping
+from jax._src import prng
+from jax._src import typing as jaxtyping
 from jax.numpy import fft
 from jax.scipy.special import gammaln
 
 
 RealArray = jaxtyping.ArrayLike
 IntegerArray = jaxtyping.ArrayLike
-KeyArray = Union[jax.Array, random.PRNGKeyArray]
+KeyArray = Union[jaxtyping.Array, prng.PRNGKeyArray]
 Shape = Sequence[int]
 PyTree = Union[dict[Any, Any], list[Any], jaxtyping.ArrayLike]
 
@@ -138,13 +138,14 @@ def rbf_cov(t0: RealArray, t1: RealArray, marg_var: float,
 
 
 def gen_spectral_mixture_kernel_fn(
-    base_kernel_fn: CovarianceKernel) -> CovarianceKernel:
+    base_kernel_fn: CovarianceKernel,
+    sum_spectral_components: bool = True) -> CovarianceKernel:
   """Creates spectral mixture kernel from a baseband CovarianceKernel."""
 
-  def spectral_mixture_kernel(t0: RealArray, t1: RealArray,
-                              marg_var_vec: RealArray,
-                              lengthscale_vec: RealArray,
-                              carrier_vec: RealArray) -> RealArray:
+  def spectral_mixture_kernels(t0: RealArray, t1: RealArray,
+                               marg_var_vec: RealArray,
+                               lengthscale_vec: RealArray,
+                               carrier_vec: RealArray) -> RealArray:
     r"""Evaluates spectral mixture kernel at two timepoints.
 
     The spectral mixture kernel is built from a set of k base kernels K_1...K_k
@@ -163,6 +164,8 @@ def gen_spectral_mixture_kernel_fn(
         each kernel.
 
     Returns:
+    TODO: explain effect of sum_spectral_components
+
       A RealArray of possitive values of the broadcasted shape of t0 - t1.
     """
     def modulated_kernel(marg_var: float, lengthscale: float, carrier_f: float):
@@ -175,9 +178,19 @@ def gen_spectral_mixture_kernel_fn(
         jax.vmap(modulated_kernel, in_axes=(0, 0, 0)))
     return vmap_modulated_kernel(
         marg_var_vec, lengthscale_vec,
-        carrier_vec).sum(axis=0)  # sum across spectral mixture components
+        carrier_vec)
 
-  return jax.jit(spectral_mixture_kernel)
+  def summed_spectral_mixture_kernels(t0: RealArray, t1: RealArray,
+                                      marg_var_vec: RealArray,
+                                      lengthscale_vec: RealArray,
+                                      carrier_vec: RealArray) -> RealArray:
+    return spectral_mixture_kernels(t0, t1, marg_var_vec, lengthscale_vec,
+                                    carrier_vec).sum(axis=0)
+
+  if sum_spectral_components:
+    return jax.jit(summed_spectral_mixture_kernels)
+  else:
+    return jax.jit(spectral_mixture_kernels)
 
 
 @jax.jit
